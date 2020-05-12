@@ -20,6 +20,10 @@ import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.RectF;
 import android.os.Trace;
+
+import org.tensorflow.lite.Interpreter;
+import org.tensorflow.lite.examples.detection.env.Logger;
+
 import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -34,8 +38,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Vector;
-import org.tensorflow.lite.Interpreter;
-import org.tensorflow.lite.examples.detection.env.Logger;
 
 /**
  * Wrapper for frozen detection models trained using the Tensorflow Object Detection API:
@@ -156,6 +158,7 @@ public class TFLiteObjectDetectionAPIModel implements Classifier {
     Trace.beginSection("preprocessBitmap");
     // Preprocess the image data from 0-255 int to normalized float based
     // on the provided parameters.
+    // 1. 预处理输入图片，读取像素点，并将RGB三通道数值归一化. 归一化后分布于 -117 ~ 138
     bitmap.getPixels(intValues, 0, bitmap.getWidth(), 0, 0, bitmap.getWidth(), bitmap.getHeight());
 
     imgData.rewind();
@@ -168,15 +171,16 @@ public class TFLiteObjectDetectionAPIModel implements Classifier {
           imgData.put((byte) ((pixelValue >> 8) & 0xFF));
           imgData.put((byte) (pixelValue & 0xFF));
         } else { // Float model
-          imgData.putFloat((((pixelValue >> 16) & 0xFF) - IMAGE_MEAN) / IMAGE_STD);
-          imgData.putFloat((((pixelValue >> 8) & 0xFF) - IMAGE_MEAN) / IMAGE_STD);
-          imgData.putFloat(((pixelValue & 0xFF) - IMAGE_MEAN) / IMAGE_STD);
+          imgData.putFloat((((pixelValue >> 16) & 0xFF) - IMAGE_MEAN) / IMAGE_STD);// 归一化通道R
+          imgData.putFloat((((pixelValue >> 8) & 0xFF) - IMAGE_MEAN) / IMAGE_STD);// 归一化通道G
+          imgData.putFloat(((pixelValue & 0xFF) - IMAGE_MEAN) / IMAGE_STD);       // 归一化通道B
         }
       }
     }
     Trace.endSection(); // preprocessBitmap
 
-    // Copy the input data into TensorFlow.
+    // Copy the input data into TensorFlow..
+    // 2. 将输入数据填充到TensorFlow中，并feed数据给模型
     Trace.beginSection("feed");
     outputLocations = new float[1][NUM_DETECTIONS][4];
     outputClasses = new float[1][NUM_DETECTIONS];
@@ -196,13 +200,15 @@ public class TFLiteObjectDetectionAPIModel implements Classifier {
     tfLite.runForMultipleInputsOutputs(inputArray, outputMap);
     Trace.endSection();
 
-    // Show the best detections.
-    // after scaling them back to the input size.
-      
+    // Show the best detections.显示最佳检测结果。
+    // after scaling them back to the input size.将其缩放回输入大小之后。
+
     // You need to use the number of detections from the output and not the NUM_DETECTONS variable declared on top
       // because on some models, they don't always output the same total number of detections
       // For example, your model's NUM_DETECTIONS = 20, but sometimes it only outputs 16 predictions
       // If you don't use the output's numDetections, you'll get nonsensical data
+    //需要使用输出中的检测次数，而不是在顶部声明的NUM_DETECTONS变量,因为在某些模型上，它们并不总是输出相同的检测总数
+    //例如NUM_DETECTIONS = 20，但有时它仅输出16个预测。如果不使用输出的numDetections，则会得到无意义的数据
     int numDetectionsOutput = Math.min(NUM_DETECTIONS, (int) numDetections[0]); // cast from float to integer, use min for safety
       
     final ArrayList<Recognition> recognitions = new ArrayList<>(numDetectionsOutput);
@@ -213,9 +219,10 @@ public class TFLiteObjectDetectionAPIModel implements Classifier {
               outputLocations[0][i][0] * inputSize,
               outputLocations[0][i][3] * inputSize,
               outputLocations[0][i][2] * inputSize);
-      // SSD Mobilenet V1 Model assumes class 0 is background class
-      // in label file and class labels start from 1 to number_of_classes+1,
+      // SSD Mobilenet V1 Model assumes class 0 is background class假定类别0为背景类别
+      // in label file and class labels start from 1 to number_of_classes+1,标签文件和类标签中，从1到number_of_classes + 1开始，
       // while outputClasses correspond to class index from 0 to number_of_classes
+      // outputClasses对应于从0到number_of_classes的类索引
       int labelOffset = 1;
       recognitions.add(
           new Recognition(

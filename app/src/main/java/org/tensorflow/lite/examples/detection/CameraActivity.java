@@ -34,10 +34,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Trace;
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.SwitchCompat;
-import androidx.appcompat.widget.Toolbar;
 import android.util.Size;
 import android.view.Surface;
 import android.view.View;
@@ -48,10 +44,18 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
+import androidx.appcompat.widget.Toolbar;
+
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
-import java.nio.ByteBuffer;
+
 import org.tensorflow.lite.examples.detection.env.ImageUtils;
 import org.tensorflow.lite.examples.detection.env.Logger;
+
+import java.nio.ByteBuffer;
 
 public abstract class CameraActivity extends AppCompatActivity
     implements OnImageAvailableListener,
@@ -88,6 +92,7 @@ public abstract class CameraActivity extends AppCompatActivity
 
   @Override
   protected void onCreate(final Bundle savedInstanceState) {
+    // 设置window layout，以及设置contentView
     LOGGER.d("onCreate " + this);
     super.onCreate(null);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -97,15 +102,16 @@ public abstract class CameraActivity extends AppCompatActivity
     setSupportActionBar(toolbar);
     getSupportActionBar().setDisplayShowTitleEnabled(false);
 
+    // 有相机权限，则进行设置相机实时图片预览区域的Fragment，否则，请求权限，让用户确定
     if (hasPermission()) {
       setFragment();
     } else {
       requestPermission();
     }
 
-    threadsTextView = findViewById(R.id.threads);
-    plusImageView = findViewById(R.id.plus);
-    minusImageView = findViewById(R.id.minus);
+    //threadsTextView = findViewById(R.id.threads);
+    //plusImageView = findViewById(R.id.plus);
+    //minusImageView = findViewById(R.id.minus);
     apiSwitchCompat = findViewById(R.id.api_info_switch);
     bottomSheetLayout = findViewById(R.id.bottom_sheet_layout);
     gestureLayout = findViewById(R.id.gesture_layout);
@@ -114,7 +120,7 @@ public abstract class CameraActivity extends AppCompatActivity
 
     ViewTreeObserver vto = gestureLayout.getViewTreeObserver();
     vto.addOnGlobalLayoutListener(
-        new ViewTreeObserver.OnGlobalLayoutListener() {
+        new ViewTreeObserver.OnGlobalLayoutListener() {//在一个视图树中的焦点状态发生改变时，所要调用的回调函数的接口类
           @Override
           public void onGlobalLayout() {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
@@ -165,8 +171,8 @@ public abstract class CameraActivity extends AppCompatActivity
 
     apiSwitchCompat.setOnCheckedChangeListener(this);
 
-    plusImageView.setOnClickListener(this);
-    minusImageView.setOnClickListener(this);
+    //plusImageView.setOnClickListener(this);
+    //minusImageView.setOnClickListener(this);
   }
 
   protected int[] getRgbBytes() {
@@ -231,23 +237,28 @@ public abstract class CameraActivity extends AppCompatActivity
   @Override
   public void onImageAvailable(final ImageReader reader) {
     // We need wait until we have some size from onPreviewSizeChosen
+    // onPreviewSizeChosen被回调后，设置了previewWidth和previewHeight，才处理预览图片
     if (previewWidth == 0 || previewHeight == 0) {
       return;
     }
+    // 构造图片输出矩阵
     if (rgbBytes == null) {
       rgbBytes = new int[previewWidth * previewHeight];
     }
     try {
+      // 获取图片
       final Image image = reader.acquireLatestImage();
 
       if (image == null) {
         return;
       }
 
+      // 正在处理图片时，则直接返回
       if (isProcessingFrame) {
         image.close();
         return;
       }
+      // yuv转换为rgb格式
       isProcessingFrame = true;
       Trace.beginSection("imageAvailable");
       final Plane[] planes = image.getPlanes();
@@ -282,6 +293,7 @@ public abstract class CameraActivity extends AppCompatActivity
             }
           };
 
+      // 这儿是关键，利用训练模型来预测图片
       processImage();
     } catch (final Exception e) {
       LOGGER.e(e, "Exception!");
@@ -431,18 +443,25 @@ public abstract class CameraActivity extends AppCompatActivity
     return null;
   }
 
+  // TODO: 2020/5/1  构造fragment设置两个重要的回调：ConnectionCallback()和
   protected void setFragment() {
+    // 获取相机，通过CameraService选择正确的摄像头。本app中不使用前置摄像头
     String cameraId = chooseCamera();
 
+    // 构建相机的Fragment.注册Camera.PreviewCallback，android.hardware.Camera的callback
     Fragment fragment;
     if (useCamera2API) {
+      // 摄像头支持高级的图像处理功能时，构造CameraConnectionFragment实例
       CameraConnectionFragment camera2Fragment =
           CameraConnectionFragment.newInstance(
               new CameraConnectionFragment.ConnectionCallback() {
                 @Override
+                // 选择了预览图片的大小 回调
                 public void onPreviewSizeChosen(final Size size, final int rotation) {
+                  // 获取相机捕获的图片的宽高，以及相机旋转方向。
                   previewHeight = size.getHeight();
                   previewWidth = size.getWidth();
+                  // 相机捕获的图片的大小确定后，需要对捕获图片做裁剪等预操作。这将回调到DetectorActivity中
                   CameraActivity.this.onPreviewSizeChosen(size, rotation);
                 }
               },
@@ -453,10 +472,11 @@ public abstract class CameraActivity extends AppCompatActivity
       camera2Fragment.setCamera(cameraId);
       fragment = camera2Fragment;
     } else {
+      // 摄像头只支持部分功能时，fallback到传统的API
       fragment =
           new LegacyCameraConnectionFragment(this, getLayoutId(), getDesiredPreviewFrameSize());
     }
-
+    // 将fragment填充到container位置处
     getFragmentManager().beginTransaction().replace(R.id.container, fragment).commit();
   }
 
@@ -504,24 +524,24 @@ public abstract class CameraActivity extends AppCompatActivity
   }
 
   @Override
-  public void onClick(View v) {
-    if (v.getId() == R.id.plus) {
-      String threads = threadsTextView.getText().toString().trim();
-      int numThreads = Integer.parseInt(threads);
-      if (numThreads >= 9) return;
-      numThreads++;
-      threadsTextView.setText(String.valueOf(numThreads));
-      setNumThreads(numThreads);
-    } else if (v.getId() == R.id.minus) {
-      String threads = threadsTextView.getText().toString().trim();
-      int numThreads = Integer.parseInt(threads);
-      if (numThreads == 1) {
-        return;
-      }
-      numThreads--;
-      threadsTextView.setText(String.valueOf(numThreads));
-      setNumThreads(numThreads);
-    }
+  public void onClick(View v) {//threads加或减
+//    if (v.getId() == R.id.plus) {
+//      String threads = threadsTextView.getText().toString().trim();
+//      int numThreads = Integer.parseInt(threads);
+//      if (numThreads >= 9) return;
+//      numThreads++;
+//      threadsTextView.setText(String.valueOf(numThreads));
+//      setNumThreads(numThreads);
+//    } else if (v.getId() == R.id.minus) {
+//      String threads = threadsTextView.getText().toString().trim();
+//      int numThreads = Integer.parseInt(threads);
+//      if (numThreads == 1) {
+//        return;
+//      }
+//      numThreads--;
+//      threadsTextView.setText(String.valueOf(numThreads));
+//      setNumThreads(numThreads);
+//    }
   }
 
   protected void showFrameInfo(String frameInfo) {

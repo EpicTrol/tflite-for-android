@@ -30,9 +30,7 @@ import android.os.SystemClock;
 import android.util.Size;
 import android.util.TypedValue;
 import android.widget.Toast;
-import java.io.IOException;
-import java.util.LinkedList;
-import java.util.List;
+
 import org.tensorflow.lite.examples.detection.customview.OverlayView;
 import org.tensorflow.lite.examples.detection.customview.OverlayView.DrawCallback;
 import org.tensorflow.lite.examples.detection.env.BorderedText;
@@ -42,6 +40,10 @@ import org.tensorflow.lite.examples.detection.tflite.Classifier;
 import org.tensorflow.lite.examples.detection.tflite.TFLiteObjectDetectionAPIModel;
 import org.tensorflow.lite.examples.detection.tracking.MultiBoxTracker;
 
+import java.io.IOException;
+import java.util.LinkedList;
+import java.util.List;
+
 /**
  * An activity that uses a TensorFlowMultiBoxDetector and ObjectTracker to detect and then track
  * objects.
@@ -50,8 +52,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
   private static final Logger LOGGER = new Logger();
 
   // Configuration values for the prepackaged SSD model.
-  private static final int TF_OD_API_INPUT_SIZE = 300;
-  private static final boolean TF_OD_API_IS_QUANTIZED = true;
+  private static final int TF_OD_API_INPUT_SIZE = 300;//
+  private static final boolean TF_OD_API_IS_QUANTIZED = true;//（没有找到，就不处理）
   private static final String TF_OD_API_MODEL_FILE = "detect.tflite";
   private static final String TF_OD_API_LABELS_FILE = "file:///android_asset/labelmap.txt";
   private static final DetectorMode MODE = DetectorMode.TF_OD_API;
@@ -82,6 +84,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
   private BorderedText borderedText;
 
+  // 图片预览展现出来时回调
   @Override
   public void onPreviewSizeChosen(final Size size, final int rotation) {
     final float textSizePx =
@@ -94,16 +97,17 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
     int cropSize = TF_OD_API_INPUT_SIZE;
 
-    try {
-      detector =
-          TFLiteObjectDetectionAPIModel.create(
-              getAssets(),
-              TF_OD_API_MODEL_FILE,
-              TF_OD_API_LABELS_FILE,
-              TF_OD_API_INPUT_SIZE,
-              TF_OD_API_IS_QUANTIZED);
-      cropSize = TF_OD_API_INPUT_SIZE;
-    } catch (final IOException e) {
+      // 构造检测器，利用了TensorFlow训练出来的Model,包括model,标签,输入size,是否量化模型quantize
+      try {
+        detector =
+            TFLiteObjectDetectionAPIModel.create(
+                getAssets(),
+                TF_OD_API_MODEL_FILE,
+                TF_OD_API_LABELS_FILE,
+                TF_OD_API_INPUT_SIZE,
+                TF_OD_API_IS_QUANTIZED);
+        cropSize = TF_OD_API_INPUT_SIZE;
+      } catch (final IOException e) {
       e.printStackTrace();
       LOGGER.e(e, "Exception initializing classifier!");
       Toast toast =
@@ -123,6 +127,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     rgbFrameBitmap = Bitmap.createBitmap(previewWidth, previewHeight, Config.ARGB_8888);
     croppedBitmap = Bitmap.createBitmap(cropSize, cropSize, Config.ARGB_8888);
 
+    // 将照相机获取的原始图片，转换为cropSize: 300*300的图片，用来作为模型预测的输入。
     frameToCropTransform =
         ImageUtils.getTransformationMatrix(
             previewWidth, previewHeight,
@@ -147,6 +152,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     tracker.setFrameConfiguration(previewWidth, previewHeight, sensorOrientation);
   }
 
+  // 利用TensorFlow模型来处理图片
   @Override
   protected void processImage() {
     ++timestamp;
@@ -160,7 +166,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     }
     computingDetection = true;
     LOGGER.i("Preparing image " + currTimestamp + " for detection in bg thread.");
-
+    // 图片的绘制等，不是模型预测的重点
     rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, previewWidth, previewHeight);
 
     readyForNextImage();
@@ -172,15 +178,19 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
       ImageUtils.saveBitmap(croppedBitmap);
     }
 
+    // 利用检测器detector对图片进行预测分析，得到图片为每个分类的概率. 比较耗时，放在子线程中
     runInBackground(
         new Runnable() {
           @Override
           public void run() {
             LOGGER.i("Running detection on image " + currTimestamp);
             final long startTime = SystemClock.uptimeMillis();
-            final List<Classifier.Recognition> results = detector.recognizeImage(croppedBitmap);
-            lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
 
+            // 1. classifier对图片进行识别
+            final List<Classifier.Recognition> results = detector.recognizeImage(croppedBitmap);
+            lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime; // 从开机到现在的毫秒书（手机睡眠的时间不包括在内）
+
+            // 2. 创建Bitmap,设置Color，Style和trokeWidth，反馈到app上。也就是results区域
             cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
             final Canvas canvas = new Canvas(cropCopyBitmap);
             final Paint paint = new Paint();
@@ -200,7 +210,10 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
             for (final Classifier.Recognition result : results) {
               final RectF location = result.getLocation();
-              if (location != null && result.getConfidence() >= minimumConfidence) {
+              // TODO: 2020/5/1   Title标签 修改
+              String label_title="person bicycle car motorcycle bus";
+              boolean status=label_title.contains(result.getTitle());
+              if (location != null && result.getConfidence() >= minimumConfidence &&status) {
                 canvas.drawRect(location, paint);
 
                 cropToFrameTransform.mapRect(location);
@@ -221,7 +234,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                   public void run() {
                     showFrameInfo(previewWidth + "x" + previewHeight);
                     showCropInfo(cropCopyBitmap.getWidth() + "x" + cropCopyBitmap.getHeight());
-                    showInference(lastProcessingTimeMs + "ms");
+                    showInference(lastProcessingTimeMs + "ms");//30fps
                   }
                 });
           }

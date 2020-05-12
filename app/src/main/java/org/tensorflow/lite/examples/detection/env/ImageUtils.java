@@ -154,7 +154,7 @@ public class ImageUtils {
   /**
    * Returns a transformation matrix from one reference frame into another. Handles cropping (if
    * maintaining aspect ratio is desired) and rotation.
-   *
+   * 处理图片裁剪和旋转
    * @param srcWidth Width of source frame.
    * @param srcHeight Height of source frame.
    * @param dstWidth Width of destination frame.
@@ -172,28 +172,31 @@ public class ImageUtils {
       final int dstHeight,
       final int applyRotation,
       final boolean maintainAspectRatio) {
+    // 定义预处理后的图片像素矩阵
     final Matrix matrix = new Matrix();
 
+    // 处理旋转
     if (applyRotation != 0) {
       if (applyRotation % 90 != 0) {
         LOGGER.w("Rotation of %d % 90 != 0", applyRotation);
       }
 
-      // Translate so center of image is at origin.
+      // Translate so center of image is at origin. translate平移，保持圆心不变
       matrix.postTranslate(-srcWidth / 2.0f, -srcHeight / 2.0f);
 
-      // Rotate around origin.
+      // Rotate around origin. rotate旋转
       matrix.postRotate(applyRotation);
     }
 
     // Account for the already applied rotation, if any, and then determine how
     // much scaling is needed for each axis.
+    // 输出矩阵是否需要转置。如果旋转为90度和270度时需要。转置后，宽高互换。
     final boolean transpose = (Math.abs(applyRotation) + 90) % 180 == 0;
 
     final int inWidth = transpose ? srcHeight : srcWidth;
     final int inHeight = transpose ? srcWidth : srcHeight;
 
-    // Apply scaling if necessary.
+    // Apply scaling if necessary. 如果src尺寸和dest尺寸不同，则需要做裁剪
     if (inWidth != dstWidth || inHeight != dstHeight) {
       final float scaleFactorX = dstWidth / (float) inWidth;
       final float scaleFactorY = dstHeight / (float) inHeight;
@@ -201,16 +204,19 @@ public class ImageUtils {
       if (maintainAspectRatio) {
         // Scale by minimum factor so that dst is filled completely while
         // maintaining the aspect ratio. Some image may fall off the edge.
+        // 保持宽高比例不变，不会有形变，但可能会被剪切。此时宽高scale的因子相同
         final float scaleFactor = Math.max(scaleFactorX, scaleFactorY);
         matrix.postScale(scaleFactor, scaleFactor);
       } else {
         // Scale exactly to fill dst from src.
+        // 不用保持宽高不变，直接匹配为dest的尺寸。可能会发生形变
         matrix.postScale(scaleFactorX, scaleFactorY);
       }
     }
 
     if (applyRotation != 0) {
       // Translate back from origin centered reference to destination frame.
+      // 平移变换
       matrix.postTranslate(dstWidth / 2.0f, dstHeight / 2.0f);
     }
 

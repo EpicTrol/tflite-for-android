@@ -52,6 +52,10 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
+
+import org.tensorflow.lite.examples.detection.customview.AutoFitTextureView;
+import org.tensorflow.lite.examples.detection.env.Logger;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -59,8 +63,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import org.tensorflow.lite.examples.detection.customview.AutoFitTextureView;
-import org.tensorflow.lite.examples.detection.env.Logger;
 
 @SuppressLint("ValidFragment")
 public class CameraConnectionFragment extends Fragment {
@@ -186,6 +188,9 @@ public class CameraConnectionFragment extends Fragment {
         public void onSurfaceTextureUpdated(final SurfaceTexture texture) {}
       };
 
+  // TODO: 2020/5/1 在构造fragment时传入两个比较重要的回调:
+  //  在打开摄像头时回调 connectionCallback
+  //  在摄像头拍摄到图片时回调imageListener
   private CameraConnectionFragment(
       final ConnectionCallback connectionCallback,
       final OnImageAvailableListener imageListener,
@@ -298,7 +303,10 @@ public class CameraConnectionFragment extends Fragment {
     // available, and "onSurfaceTextureAvailable" will not be called. In that case, we can open
     // a camera and start preview from here (otherwise, we wait until the surface is ready in
     // the SurfaceTextureListener).
+    //关闭屏幕然后再打开时，SurfaceTexture已经存在并且不会调用“ onSurfaceTextureAvailable”。
+    // 在这种情况下，我们可以打开相机并从此处开始预览（否则，我们等到SurfaceTextureListener中的曲面准备好为止）。
     if (textureView.isAvailable()) {
+      // 屏幕没有处于关闭状态时，打开摄像头。textureView是fragment中展示摄像头实时捕获的图片的区域。
       openCamera(textureView.getWidth(), textureView.getHeight());
     } else {
       textureView.setSurfaceTextureListener(surfaceTextureListener);
@@ -359,8 +367,13 @@ public class CameraConnectionFragment extends Fragment {
 
   /** Opens the camera specified by {@link CameraConnectionFragment#cameraId}. */
   private void openCamera(final int width, final int height) {
+    // 设置camera捕获图片的一些输出参数，图片预览大小previewSize，摄像头方向sensorOrientation等。
+    // 最重要的是回调我们之前传入到fragment中的ConnectionCallback 的onPreviewSizeChosen()方法。
     setUpCameraOutputs();
+    // 设置手机旋转后的适配，这儿不用关心
     configureTransform(width, height);
+
+    // 利用CameraManager这个Android底层类，打开摄像头。这儿也不是我们关注的重点
     final Activity activity = getActivity();
     final CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
     try {
